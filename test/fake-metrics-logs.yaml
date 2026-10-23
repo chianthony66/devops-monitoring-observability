@@ -11,6 +11,7 @@ spec:
   resources:
     requests:
       storage: 1Gi
+
 ---
 # 2. Log Generator
 apiVersion: apps/v1
@@ -34,7 +35,7 @@ spec:
         args:
         - --loop
         - --format=json
-        - --number=10  # number of log lines per second
+        - --number=10
         - --delay=100ms
         - --output=/var/log/generated-logs.txt
         - --overwrite
@@ -46,6 +47,7 @@ spec:
       - name: log-storage
         persistentVolumeClaim:
           claimName: logs-volume
+
 ---
 # 3. Promtail to ship logs to Loki with JSON parsing
 apiVersion: apps/v1
@@ -80,6 +82,7 @@ spec:
       - name: promtail-config
         configMap:
           name: promtail-config
+
 ---
 # 4. Promtail ConfigMap with JSON parsing stage
 apiVersion: v1
@@ -99,7 +102,7 @@ data:
 
     clients:
       - url: http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push
-        tenant_id: fake  # This adds the X-Scope-OrgID header
+        tenant_id: fake
 
     scrape_configs:
       - job_name: generated-logs
@@ -117,6 +120,7 @@ data:
           - labels:
               http_method:
               http_status:
+
 ---
 # 5. Metrics Exporter
 apiVersion: apps/v1
@@ -140,6 +144,11 @@ spec:
         ports:
         - containerPort: 8082
           name: metrics
+        resources:
+          requests:
+            memory: "1Gi"
+          limits:
+            memory: "2Gi"
         volumeMounts:
         - name: log-storage
           mountPath: /var/log
@@ -147,6 +156,7 @@ spec:
       - name: log-storage
         persistentVolumeClaim:
           claimName: logs-volume
+
 ---
 # 6. Metrics Exporter Service
 apiVersion: v1
@@ -163,19 +173,23 @@ spec:
     name: metrics
   selector:
     app: metrics-exporter
+
 ---
 # 7. ServiceMonitor for Prometheus to scrape the metrics
+# The exporter responds slowly on a laptop-sized cluster, so scrape every
+# 60s with a 50s timeout (timeout must stay below interval).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: metrics-exporter
   namespace: monitoring
   labels:
-    release: prometheus  # This should match your Prometheus selector
+    release: prometheus
 spec:
   selector:
     matchLabels:
       app: metrics-exporter
   endpoints:
   - port: metrics
-    interval: 15s
+    interval: 60s
+    scrapeTimeout: 50s

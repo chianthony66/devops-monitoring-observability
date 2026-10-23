@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: http-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    release: prometheus
+spec:
+  groups:
+  - name: http_alerts
+    interval: 30s
+    rules:
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.01
+      for: 1m
+      annotations:
+        summary: "High error rate detected on {{ $labels.method }}"
+        description: "Error rate is {{ $value }} req/s"
+    - alert: HighResponseTime
+      expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+      for: 1m
+      annotations:
+        summary: "High response time detected"
+        description: "P95 response time is {{ $value }} seconds"
